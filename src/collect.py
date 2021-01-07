@@ -66,14 +66,25 @@ while True:
     if channelIsLive:
         # Turn down quality to the lower available option if requested
         if args.min_quality:
-            logging.info('Turning stream quality down')
-            # Option stream settings
+            logging.info('Checking stream quality')
+            # Open stream settings
+            logging.debug('Opening stream settings')
             driver.find_element_by_css_selector('button[aria-label="Settings"]').click()
             # Click quality
+            logging.debug('Opening quality settings')
             driver.find_element_by_css_selector('button[data-a-target="player-settings-menu-item-quality"]').click()
             # Select lowest available option
-            qualityOptions = driver.find_elements_by_css_selector('div[data-a-target="player-settings-submenu-quality-option"]')
-            qualityOptions[-1].click()
+            logging.debug('Getting available quality options')
+            qualityOptions = driver.find_elements_by_css_selector('div[data-a-target='
+                                                                  '"player-settings-submenu-quality-option"]')
+            if not qualityOptions[-1].find_element_by_tag_name('input').is_selected():
+                logging.info('Turning down stream quality')
+                qualityOptions[-1].click()
+
+            else:
+                logging.debug('Lowest quality is already selected, closing stream settings')
+                # Click again to close settings
+                driver.find_element_by_css_selector('button[aria-label="Settings"]').click()
 
         try:
             logging.debug('Trying to find "claim bonus" button')
