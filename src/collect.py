@@ -10,8 +10,9 @@ parser.add_argument('--webdriver-path', help='Path to Chrome webdriver executabl
 parser.add_argument('--login-name', help='Account name of your own account', type=str, required=True)
 parser.add_argument('--login-pass', help='Password of your own account', type=str, required=True)
 parser.add_argument('--channel-name', help='Name of channel to collect points on', type=str, required=True)
-parser.add_argument('--debug-log', dest='debug_log', action='store_true')
-parser.set_defaults(debug_log=False)
+parser.add_argument('--min-quality', help='Watch stream in minimum quality', dest='min_quality', action='store_true')
+parser.add_argument('--debug-log', help='Output tons of debugging information', dest='debug_log', action='store_true')
+parser.set_defaults(min_quality=False, debug_log=False)
 args = parser.parse_args()
 
 logging.basicConfig(level=logging.DEBUG if args.debug_log else logging.INFO, format='%(asctime)s %(message)s')
@@ -56,6 +57,18 @@ while authModalPresent:
         authModalPresent = False
     logging.debug(f'authModalPresent: {authModalPresent}')
 
+# Turn down quality to the lower available option if requested
+if args.min_quality:
+    logging.info('Turning stream quality down')
+    # Option stream settings
+    driver.find_element_by_css_selector('button[aria-label="Settings"]').click()
+    # Click quality
+    driver.find_element_by_css_selector('button[data-a-target="player-settings-menu-item-quality"]').click()
+    # Select lowest available option
+    qualityOptions = driver.find_elements_by_css_selector('div[data-a-target="player-settings-submenu-quality-option"]')
+    qualityOptions[-1].click()
+
+logging.info('Starting to look for "claim bonus" button')
 while True:
     try:
         logging.debug('Trying to find "claim bonus" button')
