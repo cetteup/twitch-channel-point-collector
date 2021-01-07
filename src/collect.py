@@ -57,26 +57,33 @@ while authModalPresent:
         authModalPresent = False
     logging.debug(f'authModalPresent: {authModalPresent}')
 
-# Turn down quality to the lower available option if requested
-if args.min_quality:
-    logging.info('Turning stream quality down')
-    # Option stream settings
-    driver.find_element_by_css_selector('button[aria-label="Settings"]').click()
-    # Click quality
-    driver.find_element_by_css_selector('button[data-a-target="player-settings-menu-item-quality"]').click()
-    # Select lowest available option
-    qualityOptions = driver.find_elements_by_css_selector('div[data-a-target="player-settings-submenu-quality-option"]')
-    qualityOptions[-1].click()
-
-logging.info('Starting to look for "claim bonus" button')
+logging.info('Trying to collect points')
 while True:
-    try:
-        logging.debug('Trying to find "claim bonus" button')
-        claimBonusButton = driver.find_element_by_css_selector('button.tw-button.tw-button--success')
-        claimBonusButton.click()
-        logging.info('Found button, claimed bonus')
-    except NoSuchElementException:
-        logging.debug('"Claim bonus" button not present')
+    # Check whether channel is currently live
+    liveIndicators = driver.find_elements_by_css_selector(f'a[href="/{args.channel_name}"] div.tw-channel-status-text-indicator')
+    channelIsLive = len(liveIndicators) > 0
 
-    # Wait 30 seconds before checking again
-    time.sleep(30)
+    if channelIsLive:
+        # Turn down quality to the lower available option if requested
+        if args.min_quality:
+            logging.info('Turning stream quality down')
+            # Option stream settings
+            driver.find_element_by_css_selector('button[aria-label="Settings"]').click()
+            # Click quality
+            driver.find_element_by_css_selector('button[data-a-target="player-settings-menu-item-quality"]').click()
+            # Select lowest available option
+            qualityOptions = driver.find_elements_by_css_selector('div[data-a-target="player-settings-submenu-quality-option"]')
+            qualityOptions[-1].click()
+
+        try:
+            logging.debug('Trying to find "claim bonus" button')
+            claimBonusButton = driver.find_element_by_css_selector('button.tw-button.tw-button--success')
+            claimBonusButton.click()
+            logging.info('Found button, claimed bonus')
+        except NoSuchElementException:
+            logging.debug('"Claim bonus" button not present')
+
+        # Wait 30 seconds before checking again
+        time.sleep(30)
+    else:
+        logging.debug('Channel is not live')
