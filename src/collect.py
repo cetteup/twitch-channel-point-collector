@@ -11,14 +11,17 @@ parser.add_argument('--login-name', help='Account name of your own account', typ
 parser.add_argument('--login-pass', help='Password of your own account', type=str, required=True)
 parser.add_argument('--channel-name', help='Name of channel to collect points on', type=str, required=True)
 parser.add_argument('--min-quality', help='Watch stream in minimum quality', dest='min_quality', action='store_true')
+parser.add_argument('--mute-audio', help='Mute audio for the webdriven Chrome instance', dest='mute_audio', action='store_true')
 parser.add_argument('--debug-log', help='Output tons of debugging information', dest='debug_log', action='store_true')
-parser.set_defaults(min_quality=False, debug_log=False)
+parser.set_defaults(min_quality=False, mute_audio=False, debug_log=False)
 args = parser.parse_args()
 
 logging.basicConfig(level=logging.DEBUG if args.debug_log else logging.INFO, format='%(asctime)s %(message)s')
 
 logging.debug('Initializing webdriver')
 options = webdriver.ChromeOptions()
+if args.mute_audio:
+    options.add_argument('--mute-audio')
 driver = webdriver.Chrome(options=options, executable_path=args.webdriver_path)
 driver.set_window_position(0, 0)
 driver.set_window_size(1366, 768)
