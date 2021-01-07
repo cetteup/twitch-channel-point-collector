@@ -50,8 +50,7 @@ logging.info('Waiting for auth modal to disappear')
 authModalPresent = True
 while authModalPresent:
     try:
-        authModal = driver.find_element_by_id('modal-root-header')
-        authModalPresent = authModal.text == 'Verify login code' or authModal.text == 'Log in to Twitch'
+        driver.find_element_by_id('modal-root-header')
         time.sleep(2)
     except NoSuchElementException:
         authModalPresent = False
