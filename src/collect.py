@@ -106,7 +106,7 @@ while True:
                     logging.debug('Lowest quality is already selected, closing stream settings')
                     # Click again to close settings
                     driver.find_element_by_css_selector('button[aria-label="Settings"]').click()
-            except NoSuchElementException:
+            except (NoSuchElementException, ElementNotInteractableException):
                 logging.debug('Stream quality settings not present')
 
         try:
@@ -114,7 +114,7 @@ while True:
             claimBonusButton = driver.find_element_by_css_selector('button.tw-button.tw-button--success')
             claimBonusButton.click()
             logging.info('Found button, claimed bonus')
-        except NoSuchElementException:
+        except (NoSuchElementException, ElementNotInteractableException):
             logging.debug('"Claim bonus" button not present')
     else:
         logging.debug('Channel is not live')
@@ -130,7 +130,7 @@ while True:
                 if 'Pause' in playPauseButton.get_attribute('aria-label'):
                     logging.debug('Pausing VOD playback')
                     playPauseButton.click()
-            except NoSuchElementException:
+            except (NoSuchElementException, ElementNotInteractableException):
                 logging.debug('Play/pause button not present')
 
     # Wait 30 seconds before checking again
