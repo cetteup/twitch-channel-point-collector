@@ -11,7 +11,8 @@ parser.add_argument('--login-name', help='Account name of your own account', typ
 parser.add_argument('--login-pass', help='Password of your own account', type=str, required=True)
 parser.add_argument('--channel-name', help='Name of channel to collect points on', type=str, required=True)
 parser.add_argument('--min-quality', help='Watch stream in minimum quality', dest='min_quality', action='store_true')
-parser.add_argument('--mute-audio', help='Mute audio for the webdriven Chrome instance', dest='mute_audio', action='store_true')
+parser.add_argument('--mute-audio', help='Mute audio for the webdriven Chrome instance', dest='mute_audio',
+                    action='store_true')
 parser.add_argument('--debug-log', help='Output tons of debugging information', dest='debug_log', action='store_true')
 parser.set_defaults(min_quality=False, mute_audio=False, debug_log=False)
 args = parser.parse_args()
@@ -64,13 +65,14 @@ negativeLiveCheckCount = 0
 while True:
     # Refresh page after 10 negative live checks
     if negativeLiveCheckCount > 10:
-        logging.debug('Refreshing page')
+        logging.info('Refreshing page')
         driver.refresh()
         # Reset counter
         negativeLiveCheckCount = 0
 
     # Check whether channel is currently live
-    liveIndicators = driver.find_elements_by_css_selector(f'a[href="/{args.channel_name}"] div.tw-channel-status-text-indicator')
+    liveIndicators = driver.find_elements_by_css_selector(f'a[href="/{args.channel_name}"] '
+                                                          f'div.tw-channel-status-text-indicator')
     channelIsLive = len(liveIndicators) > 0
 
     # Check whether channel recently went live and "watch now" link is present
@@ -85,7 +87,8 @@ while True:
 
     # Click "start watching" button if mature content warning is present
     try:
-        startWatchingButton = driver.find_element_by_css_selector('button[data-a-target="player-overlay-mature-accept"]')
+        startWatchingButton = driver.find_element_by_css_selector('button[data-a-target='
+                                                                  '"player-overlay-mature-accept"]')
         if 'start watching' in str(startWatchingButton.text).lower():
             logging.info('Clicking "start watching" mature content')
             startWatchingButton.click()
@@ -141,13 +144,15 @@ while True:
         negativeLiveCheckCount += 1
         # Check for and VOD playing
         logging.debug('Checking for VOD player')
-        vodPlayerPresent = len(driver.find_elements_by_css_selector('div[data-a-player-type="channel_home_carousel"]')) > 0
+        vodPlayerPresent = len(driver.find_elements_by_css_selector('div[data-a-player-type='
+                                                                    '"channel_home_carousel"]')) > 0
         # Pause VOD is player is present
         if vodPlayerPresent:
             try:
                 logging.debug('Trying to find play/pause button')
-                playPauseButton = driver.find_element_by_css_selector('button[data-a-target="player-play-pause-button"]')
-                if 'Pause' in playPauseButton.get_attribute('aria-label'):
+                playPauseButton = driver.find_element_by_css_selector('button[data-a-target='
+                                                                      '"player-play-pause-button"]')
+                if 'pause' in str(playPauseButton.get_attribute('aria-label')).lower():
                     logging.info('Pausing VOD playback')
                     playPauseButton.click()
             except (NoSuchElementException, ElementNotInteractableException):
