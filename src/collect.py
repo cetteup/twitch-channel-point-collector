@@ -78,7 +78,7 @@ while True:
     try:
         watchNowLink = driver.find_element_by_css_selector('a[data-a-target="home-live-overlay-button"]')
         if 'watch now' in str(watchNowLink.text).lower():
-            logging.debug('Clicking "watch now" link')
+            logging.info('Clicking "watch now" link')
             watchNowLink.click()
     except (NoSuchElementException, ElementNotInteractableException):
         watchNowLinkPresent = False
@@ -86,7 +86,7 @@ while True:
     if channelIsLive:
         # Turn down quality to the lower available option if requested
         if args.min_quality:
-            logging.info('Checking stream quality')
+            logging.debug('Checking stream quality')
             try:
                 # Open stream settings
                 logging.debug('Opening stream settings')
@@ -115,7 +115,7 @@ while True:
             chatExpandToggleButton = driver.find_element_by_css_selector('button[data-a-target='
                                                                          '"right-column__toggle-collapse-btn"]')
             if 'expand' in str(chatExpandToggleButton.get_attribute('aria-label')).lower():
-                logging.debug('Chat is currently collapsed, expanding it')
+                logging.info('Chat is currently collapsed, expanding it')
                 chatExpandToggleButton.click()
         except (NoSuchElementException, ElementNotInteractableException):
             logging.error('Chat expand button not present/interactable')
