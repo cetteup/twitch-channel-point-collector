@@ -109,6 +109,17 @@ while True:
             except (NoSuchElementException, ElementNotInteractableException):
                 logging.debug('Stream quality settings not present')
 
+        # Make sure chat is expanded
+        try:
+            logging.debug('Checking whether chat is collapsed')
+            chatExpandToggleButton = driver.find_element_by_css_selector('button[data-a-target='
+                                                                         '"right-column__toggle-collapse-btn"]')
+            if 'expand' in str(chatExpandToggleButton.get_attribute('aria-label')).lower():
+                logging.debug('Chat is currently collapsed, expanding it')
+                chatExpandToggleButton.click()
+        except (NoSuchElementException, ElementNotInteractableException):
+            logging.error('Chat expand button not present/interactable')
+
         try:
             logging.debug('Trying to find "claim bonus" button')
             claimBonusButton = driver.find_element_by_css_selector('button.tw-button.tw-button--success')
