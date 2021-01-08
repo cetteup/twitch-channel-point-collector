@@ -60,7 +60,15 @@ while authModalPresent:
     logging.debug(f'authModalPresent: {authModalPresent}')
 
 logging.info('Trying to collect points')
+negativeLiveCheckCount = 0
 while True:
+    # Refresh page after 10 negative live checks
+    if negativeLiveCheckCount > 10:
+        logging.debug('Refreshing page')
+        driver.refresh()
+        # Reset counter
+        negativeLiveCheckCount = 0
+
     # Check whether channel is currently live
     liveIndicators = driver.find_elements_by_css_selector(f'a[href="/{args.channel_name}"] div.tw-channel-status-text-indicator')
     channelIsLive = len(liveIndicators) > 0
@@ -98,8 +106,22 @@ while True:
             logging.info('Found button, claimed bonus')
         except NoSuchElementException:
             logging.debug('"Claim bonus" button not present')
-
-        # Wait 30 seconds before checking again
-        time.sleep(30)
     else:
         logging.debug('Channel is not live')
+        negativeLiveCheckCount += 1
+        # Check for and VOD playing
+        logging.debug('Checking for VOD player')
+        vodPlayerPresent = len(driver.find_elements_by_css_selector('div[data-a-player-type="channel_home_carousel"]')) > 0
+        # Pause VOD is player is present
+        if vodPlayerPresent:
+            try:
+                logging.debug('Trying to find play/pause button')
+                playPauseButton = driver.find_element_by_css_selector('button[data-a-target="player-play-pause-button"]')
+                if 'Pause' in playPauseButton.get_attribute('aria-label'):
+                    logging.debug('Pausing VOD playback')
+                    playPauseButton.click()
+            except NoSuchElementException:
+                logging.debug('Play/pause button not present')
+
+    # Wait 30 seconds before checking again
+    time.sleep(30)
