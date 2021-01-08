@@ -3,7 +3,7 @@ import logging
 import time
 
 from selenium import webdriver
-from selenium.common.exceptions import NoSuchElementException
+from selenium.common.exceptions import NoSuchElementException, ElementNotInteractableException
 
 parser = argparse.ArgumentParser(description='Auto-collect Twitch channel points using the Chrome webdriver')
 parser.add_argument('--webdriver-path', help='Path to Chrome webdriver executable', type=str, required=True)
@@ -72,6 +72,16 @@ while True:
     # Check whether channel is currently live
     liveIndicators = driver.find_elements_by_css_selector(f'a[href="/{args.channel_name}"] div.tw-channel-status-text-indicator')
     channelIsLive = len(liveIndicators) > 0
+
+    # Check whether channel recently went live and "watch now" link is present
+    watchNowLinkPresent = False
+    try:
+        watchNowLink = driver.find_element_by_css_selector('a[data-a-target="home-live-overlay-button"]')
+        if 'watch now' in str(watchNowLink.text).lower():
+            logging.debug('Clicking "watch now" link')
+            watchNowLink.click()
+    except (NoSuchElementException, ElementNotInteractableException):
+        watchNowLinkPresent = False
 
     if channelIsLive:
         # Turn down quality to the lower available option if requested
