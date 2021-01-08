@@ -83,6 +83,15 @@ while True:
     except (NoSuchElementException, ElementNotInteractableException):
         watchNowLinkPresent = False
 
+    # Click "start watching" button if mature content warning is present
+    try:
+        startWatchingButton = driver.find_element_by_css_selector('button[data-a-target="player-overlay-mature-accept"]')
+        if 'start watching' in str(startWatchingButton.text).lower():
+            logging.info('Clicking "start watching" mature content')
+            startWatchingButton.click()
+    except (NoSuchElementException, ElementNotInteractableException):
+        logging.debug('"Start watching" button not present/interactable')
+
     if channelIsLive:
         # Turn down quality to the lower available option if requested
         if args.min_quality:
@@ -139,7 +148,7 @@ while True:
                 logging.debug('Trying to find play/pause button')
                 playPauseButton = driver.find_element_by_css_selector('button[data-a-target="player-play-pause-button"]')
                 if 'Pause' in playPauseButton.get_attribute('aria-label'):
-                    logging.debug('Pausing VOD playback')
+                    logging.info('Pausing VOD playback')
                     playPauseButton.click()
             except (NoSuchElementException, ElementNotInteractableException):
                 logging.debug('Play/pause button not present')
