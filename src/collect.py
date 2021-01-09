@@ -44,7 +44,7 @@ if len(collectChannels) > 1:
                  'browser will be brought to the foreground when switching tabs')
 
 logging.info('Opening (first) collect channel on Twitch')
-driver.get(f'https://www.twitch.tv/' + collectChannels[0]['channelName'])
+driver.get(f'https://www.twitch.tv/{collectChannels[0]["channelName"]}')
 
 # Store current window handle for first channel
 collectChannels[0]['windowHandle'] = driver.current_window_handle
@@ -124,7 +124,8 @@ while True:
         # Refresh page after 10 negative live checks
         if collectChannel['negativeLiveCheckCount'] > 10:
             logging.info('Refreshing page')
-            driver.refresh()
+            # Use get instead of refresh to navigate back to collect channel after host/raid
+            driver.get(f'https://www.twitch.tv/{collectChannel["channelName"]}')
             # Reset counter
             collectChannel['negativeLiveCheckCount'] = 0
 
