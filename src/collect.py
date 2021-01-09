@@ -85,6 +85,17 @@ try:
 except (NoSuchElementException, ElementNotInteractableException):
     logging.error('Failed to click privacy terms "accept" button')
 
+# Collapse left sidebar if currently expanded
+try:
+    logging.debug('Checking whether left sidebar is collapsed')
+    leftSidebarExpandToggleButton = driver.find_element_by_css_selector('button[data-a-target="side-nav-arrow"]')
+
+    if 'collapse' in str(leftSidebarExpandToggleButton.get_attribute('aria-label')).lower():
+        logging.info('Left sidebar is currently expanded, collapsing it')
+        leftSidebarExpandToggleButton.click()
+except (NoSuchElementException, ElementNotInteractableException):
+    logging.error('Left sidebar expand button not present/interactable')
+
 logging.info('Trying to collect points')
 while True:
     # Loop over collect channels and try to collect points for each one
