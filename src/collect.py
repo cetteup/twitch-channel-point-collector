@@ -78,6 +78,13 @@ while authModalPresent:
         authModalPresent = False
     logging.debug(f'authModalPresent: {authModalPresent}')
 
+# Accept privacy terms
+logging.info('Clicking privacy terms "accept" button')
+try:
+    driver.find_element_by_css_selector('button[data-a-target="consent-banner-accept"').click()
+except (NoSuchElementException, ElementNotInteractableException):
+    logging.error('Failed to click privacy terms "accept" button')
+
 logging.info('Trying to collect points')
 while True:
     # Loop over collect channels and try to collect points for each one
