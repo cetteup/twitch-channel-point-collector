@@ -198,6 +198,9 @@ while True:
                 logging.info('Found button, claimed bonus')
             except (NoSuchElementException, ElementNotInteractableException):
                 logging.debug('"Claim bonus" button not present')
+                
+            # Stay for a few seconds
+            time.sleep(5)
         else:
             logging.debug('Channel is not live')
             collectChannel['negativeLiveCheckCount'] += 1
@@ -217,5 +220,6 @@ while True:
                 except (NoSuchElementException, ElementNotInteractableException):
                     logging.debug('Play/pause button not present')
 
-    # Wait 30 seconds before checking again
-    time.sleep(30)
+    # If collecting on a single channel, wait 30 seconds before checking again
+    if len(collectChannels) > 1:
+        time.sleep(30)
