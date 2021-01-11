@@ -221,5 +221,5 @@ while True:
                     logging.debug('Play/pause button not present')
 
     # If collecting on a single channel, wait 30 seconds before checking again
-    if len(collectChannels) > 1:
+    if len(collectChannels) == 1:
         time.sleep(30)
