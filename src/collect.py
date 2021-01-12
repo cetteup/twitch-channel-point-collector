@@ -38,7 +38,7 @@ parser.add_argument('--debug-log', help='Output tons of debugging information', 
 parser.set_defaults(min_quality=False, mute_audio=False, debug_log=False)
 args = parser.parse_args()
 
-logging.basicConfig(level=logging.DEBUG if args.debug_log else logging.INFO, format='%(asctime)s %(message)s')
+logging.basicConfig(level=logging.DEBUG if args.debug_log else logging.INFO, format='%(asctime)s %(levelname)-8s: %(message)s')
 
 POINTS_FOR_WATCHTIME = 10
 POINTS_FOR_BONUS = 50
@@ -67,8 +67,8 @@ for channelName in args.channel_name:
     })
 
 if len(collectChannels) > 1:
-    logging.info('PLEASE NOTE: Running with multiple collect channels, '
-                 'browser will be brought to the foreground when switching tabs')
+    logging.warning('Running with multiple collect channels, '
+                    'browser will be brought to the foreground when switching tabs')
 
 logging.info('Opening (first) collect channel on Twitch')
 driver.get(f'https://www.twitch.tv/{collectChannels[0]["channelName"]}')
