@@ -2,8 +2,26 @@ import argparse
 import logging
 import time
 
+from datetime import datetime
 from selenium import webdriver
 from selenium.common.exceptions import NoSuchElementException, ElementNotInteractableException, NoSuchWindowException, TimeoutException
+
+
+def calc_earned_channel_points(watching_since: datetime, claimed_bonuses: int, multiplier: float = 1.0) -> int:
+    # Calculate points earned by watchtime
+    # Calculate watchtime in minutes
+    watchtime_in_minutes = int((datetime.now() - watching_since).seconds / 60)
+    # Twitch awards 10 points for watching 5 minutes of a broadcast
+    earned_points = int(watchtime_in_minutes / 5) * POINTS_FOR_WATCHTIME
+
+    # Add points earned by claiming bonuses (50 points each)
+    earned_points += claimed_bonuses * POINTS_FOR_BONUS
+
+    # Apply multiplier
+    earned_points *= multiplier
+
+    return int(earned_points)
+
 
 parser = argparse.ArgumentParser(description='Auto-collect Twitch channel points using the Chrome webdriver')
 parser.add_argument('--version', action='version', version='twitch-channel-point-collector v0.1.5')
@@ -22,6 +40,9 @@ args = parser.parse_args()
 
 logging.basicConfig(level=logging.DEBUG if args.debug_log else logging.INFO, format='%(asctime)s %(message)s')
 
+POINTS_FOR_WATCHTIME = 10
+POINTS_FOR_BONUS = 50
+
 logging.debug('Initializing webdriver')
 options = webdriver.ChromeOptions()
 if args.mute_audio:
@@ -38,7 +59,11 @@ for channelName in args.channel_name:
         'channelName': channelName.strip(),
         'negativeLiveCheckCount': 0,
         'windowHandle': None,
-        'subscribed': False
+        'earnedPoints': 0,
+        'subscribed': False,
+        'pointMultiplier': 0.0,
+        'startedWatchingLiveAt': None,
+        'claimedBonuses': 0
     })
 
 if len(collectChannels) > 1:
@@ -165,6 +190,10 @@ while True:
             logging.debug('"Start watching" button not present/interactable')
 
         if channelIsLive:
+            # Store time at which we started watching a live broadcast
+            if collectChannel['startedWatchingLiveAt'] is None:
+                collectChannel['startedWatchingLiveAt'] = datetime.now()
+
             # Turn down quality to the lower available option if requested
             if args.min_quality:
                 logging.debug('Checking stream quality')
@@ -201,19 +230,62 @@ while True:
             except (NoSuchElementException, ElementNotInteractableException):
                 logging.error('Chat expand button not present/interactable')
 
+            # Get channel point multiplier if not set yet
+            if collectChannel['pointMultiplier'] == 0.0:
+                try:
+                    logging.debug('Opening channel point dialog')
+                    driver.find_element_by_css_selector('div[data-test-selector="community-points-summary"] button').click()
+
+                    # Click initial "Get Started" button if present
+                    getStartedButtons = driver.find_elements_by_css_selector('div.reward-center-body '
+                                                                             'button.tw-core-button--primary')
+                    if len(getStartedButtons) > 0:
+                        getStartedButtons[0].click()
+
+                    # Check whether multiplier heading is present
+                    multiplierHeadings = driver.find_elements_by_css_selector('div#channel-points-reward-center-header h6')
+                    # Get multiplier value if heading is present, else use default (1.0)
+                    if len(multiplierHeadings) > 0:
+                        # Try to split heading and cast to float
+                        collectChannel['pointMultiplier'] = float(str(multiplierHeadings[0].text).lower().split('x')[0])
+                    else:
+                        collectChannel['pointMultiplier'] = 1.0
+
+                    logging.debug('Closing channel point dialog')
+                    driver.find_element_by_css_selector('div[data-test-selector="community-points-summary"] button').click()
+                except (NoSuchElementException, ElementNotInteractableException):
+                    logging.error('Failed to get channel point multiplier')
+                    # Use default multiplier
+                    collectChannel['pointMultiplier'] = 1.0
+                except ValueError:
+                    logging.error('Failed to parse channel point multiplier')
+                    # Use default multiplier
+                    collectChannel['pointMultiplier'] = 1.0
+
             try:
                 logging.debug('Trying to find "claim bonus" button')
                 claimBonusButton = driver.find_element_by_css_selector('button.tw-button.tw-button--success')
                 claimBonusButton.click()
                 logging.info('Found button, claimed bonus')
+                # Update bonus counter
+                collectChannel['claimedBonuses'] += 1
             except (NoSuchElementException, ElementNotInteractableException):
                 logging.debug('"Claim bonus" button not present')
-                
+
             # Stay for a few seconds
             time.sleep(5)
         else:
             logging.debug('Channel is not live')
             collectChannel['negativeLiveCheckCount'] += 1
+
+            if collectChannel['startedWatchingLiveAt'] is not None:
+                # Update earned points
+                collectChannel['earnedPoints'] = calc_earned_channel_points(collectChannel['startedWatchingLiveAt'],
+                                                                            collectChannel['claimedBonuses'],
+                                                                            collectChannel['pointMultiplier'])
+                # Unset start timestamp
+                collectChannel['startedWatchingLiveAt'] = None
+
             # Check for and VOD playing
             logging.debug('Checking for VOD player')
             vodPlayerPresent = len(driver.find_elements_by_css_selector('div[data-a-player-type='
@@ -229,6 +301,19 @@ while True:
                         playPauseButton.click()
                 except (NoSuchElementException, ElementNotInteractableException):
                     logging.debug('Play/pause button not present')
+
+        # Calculate current broadcast session points
+        if collectChannel['startedWatchingLiveAt'] is not None:
+            currentBroadcastPoints = calc_earned_channel_points(collectChannel['startedWatchingLiveAt'],
+                                                                collectChannel['claimedBonuses'],
+                                                                collectChannel['pointMultiplier'])
+        else:
+            currentBroadcastPoints = 0
+
+        # If we earned any points, log point estimate
+        if (collectChannel['earnedPoints'] + currentBroadcastPoints) > 0:
+            logging.info(f'Channel points earned for {collectChannel["channelName"]}: '
+                         f'{collectChannel["earnedPoints"] + currentBroadcastPoints} (estimate)')
 
     # If collecting on a single channel, wait 30 seconds before checking again
     if len(collectChannels) == 1:
