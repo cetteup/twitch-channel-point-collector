@@ -6,6 +6,7 @@ from selenium import webdriver
 from selenium.common.exceptions import NoSuchElementException, ElementNotInteractableException, NoSuchWindowException
 
 parser = argparse.ArgumentParser(description='Auto-collect Twitch channel points using the Chrome webdriver')
+parser.add_argument('--version', action='version', version='twitch-channel-point-collector v0.1.5')
 parser.add_argument('--webdriver-path', help='Path to Chrome webdriver executable', type=str, required=True)
 parser.add_argument('--login-name', help='Account name of your own account', type=str, required=True)
 parser.add_argument('--login-pass', help='Password of your own account', type=str, required=True)
