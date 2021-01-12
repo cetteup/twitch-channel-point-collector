@@ -3,7 +3,7 @@ import logging
 import time
 
 from selenium import webdriver
-from selenium.common.exceptions import NoSuchElementException, ElementNotInteractableException, NoSuchWindowException
+from selenium.common.exceptions import NoSuchElementException, ElementNotInteractableException, NoSuchWindowException, TimeoutException
 
 parser = argparse.ArgumentParser(description='Auto-collect Twitch channel points using the Chrome webdriver')
 parser.add_argument('--version', action='version', version='twitch-channel-point-collector v0.1.5')
@@ -127,7 +127,11 @@ while True:
         if collectChannel['negativeLiveCheckCount'] > 10:
             logging.info('Refreshing page')
             # Use get instead of refresh to navigate back to collect channel after host/raid
-            driver.get(f'https://www.twitch.tv/{collectChannel["channelName"]}')
+            try:
+                driver.get(f'https://www.twitch.tv/{collectChannel["channelName"]}')
+            except TimeoutException:
+                logging.error('Failed to refresh page, will retry next iteration')
+                continue
             # Reset counter
             collectChannel['negativeLiveCheckCount'] = 0
 
