@@ -37,7 +37,8 @@ for channelName in args.channel_name:
     collectChannels.append({
         'channelName': channelName.strip(),
         'negativeLiveCheckCount': 0,
-        'windowHandle': None
+        'windowHandle': None,
+        'subscribed': False
     })
 
 if len(collectChannels) > 1:
@@ -134,6 +135,10 @@ while True:
         liveIndicators = driver.find_elements_by_css_selector(f'a[href="/{collectChannel["channelName"]}"] '
                                                               f'div.tw-channel-status-text-indicator')
         channelIsLive = len(liveIndicators) > 0
+
+        # Check whether user subscribed to channel
+        collectChannel['subscribed'] = len(driver.find_elements_by_css_selector('button[data-a-target='
+                                                                                '"subscribed-button"]')) > 0
 
         # Check whether channel recently went live and "watch now" link is present
         watchNowLinkPresent = False
