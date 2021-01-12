@@ -230,6 +230,14 @@ while True:
             except (NoSuchElementException, ElementNotInteractableException):
                 logging.error('Chat expand button not present/interactable')
 
+            # Make sure channel uses channel points
+            try:
+                logging.debug('Trying to find channel point button/indicator')
+                driver.find_element_by_css_selector('div[data-test-selector="community-points-summary"] button')
+            except NoSuchElementException:
+                logging.warning(f'{collectChannel["channelName"]} is not using channel points, skipping')
+                continue
+
             # Get channel point multiplier if not set yet
             if collectChannel['pointMultiplier'] == 0.0:
                 try:
