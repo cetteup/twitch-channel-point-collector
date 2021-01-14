@@ -192,6 +192,14 @@ while True:
                 logging.error(f'Failed to switch to tab for {collectChannel["channelName"]}')
                 # Unset window handle so a new tab will be opened next iteration
                 collectChannel['windowHandle'] = None
+                # If we were watching the channel in the "missing" window/tab, take note that we are no longer watching
+                if collectChannel['startedWatchingLiveAt'] is not None:
+                    # Update earned points
+                    collectChannel['earnedPoints'] = calc_earned_channel_points(collectChannel['startedWatchingLiveAt'],
+                                                                                collectChannel['claimedBonuses'],
+                                                                                collectChannel['pointMultiplier'])
+                    # Unset start timestamp
+                    collectChannel['startedWatchingLiveAt'] = None
                 continue
 
         # Refresh page after 10 negative live checks
