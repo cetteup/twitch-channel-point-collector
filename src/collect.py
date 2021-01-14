@@ -16,7 +16,7 @@ def check_play_paused_status(desired_status: str, toggle_to_desired: bool = Fals
         play_pause_button = driver.find_element_by_css_selector('button[data-a-target="player-play-pause-button"]')
         status = str(play_pause_button.get_attribute('aria-label')).lower()
         if status.startswith(desired_status) and toggle_to_desired:
-            logging.info(f'VOD/stream is {status}, but should be {desired_status}, clicking to toggle')
+            logging.info(f'VOD/stream status should be "{desired_status}" but isn\'t, clicking to toggle')
             play_pause_button.click()
     except (NoSuchElementException, ElementNotInteractableException):
         logging.debug('Play/pause button not present')
@@ -358,15 +358,7 @@ while True:
                                                                         '"channel_home_carousel"]')) > 0
             # Pause VOD is player is present
             if vodPlayerPresent:
-                try:
-                    logging.debug('Trying to find play/pause button')
-                    playPauseButton = driver.find_element_by_css_selector('button[data-a-target='
-                                                                          '"player-play-pause-button"]')
-                    if 'pause' in str(playPauseButton.get_attribute('aria-label')).lower():
-                        logging.info('Pausing VOD playback')
-                        playPauseButton.click()
-                except (NoSuchElementException, ElementNotInteractableException):
-                    logging.debug('Play/pause button not present')
+                check_play_paused_status('pause', True)
 
         # Calculate current broadcast session points
         if collectChannel['startedWatchingLiveAt'] is not None:
