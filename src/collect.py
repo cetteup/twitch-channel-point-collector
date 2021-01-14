@@ -7,6 +7,25 @@ from selenium import webdriver
 from selenium.common.exceptions import NoSuchElementException, ElementNotInteractableException, NoSuchWindowException, TimeoutException
 
 
+def check_play_paused_status(desired_status: str, toggle_to_desired: bool = False) -> bool:
+    global driver
+
+    status = ''
+    try:
+        logging.debug('Trying to find play/pause button')
+        play_pause_button = driver.find_element_by_css_selector('button[data-a-target="player-play-pause-button"]')
+        status = str(play_pause_button.get_attribute('aria-label')).lower()
+        if status.startswith(desired_status) and toggle_to_desired:
+            logging.info(f'VOD/stream is {status}, but should be {desired_status}, clicking to toggle')
+            play_pause_button.click()
+    except (NoSuchElementException, ElementNotInteractableException):
+        logging.debug('Play/pause button not present')
+
+    # Since the button is supposed to say the opposite! of the desired status, return whether the button does not!
+    # reflect the desired status (button says "pause" means vod/stream is playing)
+    return not status.startswith(desired_status)
+
+
 def calc_earned_channel_points(watching_since: datetime, claimed_bonuses: int, multiplier: float = 1.0) -> int:
     # Calculate points earned by watchtime
     # Calculate watchtime in minutes
@@ -127,8 +146,11 @@ logging.info('Trying to collect points')
 while True:
     # Loop over collect channels and try to collect points for each one
     for collectChannel in collectChannels:
+        # Filter collect channel list down to ones that are currently active
+        activeChannels = [c for c in collectChannels if c['windowHandle'] is not None
+                          and c['startedWatchingLiveAt'] is not None]
         # Open tab if required
-        if collectChannel['windowHandle'] is None:
+        if len(activeChannels) < 2 and collectChannel['windowHandle'] is None:
             logging.info(f'Opening tab for {collectChannel["channelName"]}')
             # Open tab and navigate to channel
             driver.execute_script(f'window.open("https://www.twitch.tv/{collectChannel["channelName"]}", "_blank");')
@@ -136,6 +158,30 @@ while True:
             newHandles = [handle for handle in driver.window_handles if
                           handle not in [c['windowHandle'] for c in collectChannels]]
             collectChannel['windowHandle'] = newHandles[-1]
+
+            # Close any obsolete old tabs
+            if len(driver.window_handles) > len(activeChannels):
+                activeChannelWindowHandles = [c['windowHandle'] for c in activeChannels]
+                # Iterate over all existing window handles, close those windows/tabs that are not a) active or
+                # b) the one we just opened
+                for handle in driver.window_handles:
+                    if handle != collectChannel['windowHandle'] and handle not in activeChannelWindowHandles:
+                        try:
+                            logging.debug('Trying to close obsolete window')
+                            driver.switch_to.window(handle)
+                            driver.close()
+                        except NoSuchWindowException:
+                            logging.warning('Window/tab to close is already gone')
+                        finally:
+                            # No matter how, window is now gone => unset window handle
+                            channelWindowHandles = [c['windowHandle'] for c in collectChannels]
+                            index = channelWindowHandles.index(handle)
+                            logging.debug(f'Obsolete window belonged to {collectChannels[index]["channelName"]}, '
+                                          f'unsetting window handle')
+                            collectChannels[index]['windowHandle'] = None
+        elif len(activeChannels) >= 2 and collectChannel not in activeChannels:
+            logging.debug(f'Already have two active tabs open, not opening one for {collectChannel["channelName"]}')
+            continue
 
         # Switch to tab for current channel if there are multiple collect channels or tabs
         if len(collectChannels) > 1 or len(driver.window_handles) > 1:
