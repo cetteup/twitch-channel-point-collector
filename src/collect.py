@@ -145,12 +145,22 @@ except (NoSuchElementException, ElementNotInteractableException):
 logging.info('Trying to collect points')
 while True:
     # Loop over collect channels and try to collect points for each one
-    for collectChannel in collectChannels:
+    for rank, collectChannel in enumerate(collectChannels):
         # Filter collect channel list down to ones that are currently active
         activeChannels = [c for c in collectChannels if c['windowHandle'] is not None
                           and c['startedWatchingLiveAt'] is not None]
-        # Open tab if required
-        if len(activeChannels) < 2 and collectChannel['windowHandle'] is None:
+
+        """
+        Open new tab for current channel if there no open tab for this channel AND
+        a) fewer than the max two active tabs are open OR
+        b) the current channel has a higher rank than at least one active channel
+        """
+        obsoleteWindowHandles = []
+        if collectChannel['windowHandle'] is None and \
+                (len(activeChannels) < 2 or
+                 (len(activeChannels) == 2 and
+                  (rank < collectChannels.index(activeChannels[0]) or
+                   rank < collectChannels.index(activeChannels[1])))):
             logging.info(f'Opening tab for {collectChannel["channelName"]}')
             # Open tab and navigate to channel
             driver.execute_script(f'window.open("https://www.twitch.tv/{collectChannel["channelName"]}", "_blank");')
@@ -162,29 +172,36 @@ while True:
             # Close any obsolete old tabs
             if len(driver.window_handles) > len(activeChannels):
                 activeChannelWindowHandles = [c['windowHandle'] for c in activeChannels]
-                # Iterate over all existing window handles, close those windows/tabs that are not a) active or
-                # b) the one we just opened
-                for handle in driver.window_handles:
-                    if handle != collectChannel['windowHandle'] and handle not in activeChannelWindowHandles:
-                        try:
-                            logging.debug('Trying to close obsolete window')
-                            driver.switch_to.window(handle)
-                            driver.close()
-                        except NoSuchWindowException:
-                            logging.warning('Window/tab to close is already gone')
-                        finally:
-                            # No matter how, window is now gone => unset window handle
-                            channelWindowHandles = [c['windowHandle'] for c in collectChannels]
-                            index = channelWindowHandles.index(handle)
-                            logging.debug(f'Obsolete window belonged to {collectChannels[index]["channelName"]}, '
-                                          f'unsetting window handle')
-                            collectChannels[index]['windowHandle'] = None
+                # Iterate over all existing window handles, prepare to close those windows/tabs that are not
+                # a) active or b) the one we just opened
+                obsoleteWindowHandles = [h for h in driver.window_handles if
+                                         h != collectChannel['windowHandle'] and
+                                         h not in activeChannelWindowHandles]
+        elif len(activeChannels) > 2:
+            # More than two active tabs/windows are open, prepare to close the lowest ranked one
+            obsoleteWindowHandles.append(activeChannels[-1]['windowHandle'])
         elif len(activeChannels) >= 2 and collectChannel not in activeChannels:
             logging.debug(f'Already have two active tabs open, not opening one for {collectChannel["channelName"]}')
             continue
 
+        # Close any obsolete windows
+        for obsoleteWindowHandle in obsoleteWindowHandles:
+            try:
+                logging.debug('Trying to close obsolete window')
+                driver.switch_to.window(obsoleteWindowHandle)
+                driver.close()
+            except NoSuchWindowException:
+                logging.warning('Window/tab to close is already gone')
+            finally:
+                # No matter how, window is now gone => unset window handle
+                channelWindowHandles = [c['windowHandle'] for c in collectChannels]
+                index = channelWindowHandles.index(obsoleteWindowHandle)
+                logging.debug(f'Obsolete window belonged to {collectChannels[index]["channelName"]}, '
+                              f'unsetting window handle')
+                collectChannels[index]['windowHandle'] = None
+
         # Switch to tab for current channel if there are multiple collect channels or tabs
-        if len(collectChannels) > 1 or len(driver.window_handles) > 1:
+        if (len(collectChannels) > 1 or len(driver.window_handles) > 1) and collectChannel['windowHandle'] is not None:
             try:
                 logging.info(f'Switching to tab for {collectChannel["channelName"]}')
                 driver.switch_to.window(collectChannel['windowHandle'])
@@ -192,15 +209,20 @@ while True:
                 logging.error(f'Failed to switch to tab for {collectChannel["channelName"]}')
                 # Unset window handle so a new tab will be opened next iteration
                 collectChannel['windowHandle'] = None
-                # If we were watching the channel in the "missing" window/tab, take note that we are no longer watching
-                if collectChannel['startedWatchingLiveAt'] is not None:
-                    # Update earned points
-                    collectChannel['earnedPoints'] = calc_earned_channel_points(collectChannel['startedWatchingLiveAt'],
-                                                                                collectChannel['claimedBonuses'],
-                                                                                collectChannel['pointMultiplier'])
-                    # Unset start timestamp
-                    collectChannel['startedWatchingLiveAt'] = None
-                continue
+
+        # If we no longer/current don't have a tab open for the current channel, skip remaining steps
+        if collectChannel['windowHandle'] is None:
+            # If we were watching the channel in the obsolete/"missing" window/tab,
+            # take note that we are no longer watching
+            if collectChannel['startedWatchingLiveAt'] is not None:
+                # Update earned points
+                collectChannel['earnedPoints'] = calc_earned_channel_points(collectChannel['startedWatchingLiveAt'],
+                                                                            collectChannel['claimedBonuses'],
+                                                                            collectChannel['pointMultiplier'])
+                # Unset start timestamp
+                collectChannel['startedWatchingLiveAt'] = None
+            # Skip remaining steps for this iteration
+            continue
 
         # Refresh page after 10 negative live checks
         if collectChannel['negativeLiveCheckCount'] > 10:
