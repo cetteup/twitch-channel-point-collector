@@ -240,6 +240,18 @@ while True:
             if collectChannel['startedWatchingLiveAt'] is None:
                 collectChannel['startedWatchingLiveAt'] = datetime.now()
 
+            # Check if stream is paused
+            # When a streaming channel goes offline, the stream still shows as "live" but the stream is "paused"
+            if not check_play_paused_status('play'):
+                logging.info('Channel should be live but stream seems paused, refreshing page')
+                # Use get instead of refresh to navigate back to collect channel after host/raid
+                try:
+                    driver.get(f'https://www.twitch.tv/{collectChannel["channelName"]}')
+                except TimeoutException:
+                    logging.error('Failed to refresh page, will retry next iteration')
+                finally:
+                    continue
+
             # Turn down quality to the lower available option if requested
             if args.min_quality:
                 logging.debug('Checking stream quality')
