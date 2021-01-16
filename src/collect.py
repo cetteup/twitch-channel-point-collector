@@ -163,7 +163,7 @@ while True:
                    rank < collectChannels.index(activeChannels[1])))):
             logging.info(f'Opening tab for {collectChannel["channelName"]}')
             # Open tab and navigate to channel
-            driver.switch_to.default_content()
+            driver.switch_to.window(driver.window_handles[-1])
             driver.execute_script(f'window.open("https://www.twitch.tv/{collectChannel["channelName"]}", "_blank");')
             # Find and store window handle
             newHandles = [handle for handle in driver.window_handles if
