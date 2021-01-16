@@ -50,11 +50,15 @@ parser.add_argument('--login-pass', help='Password of your own account', type=st
 parser.add_argument('--channel-name', help='Names of channels to collect points on '
                                            '(multiple channels will required the browser to run in the foreground)',
                     nargs='+', type=str, required=True)
+parser.add_argument('--max-concurrent', help='Maximum number of channels to collect points on', type=int,
+                    choices=[1, 2], default=2)
+parser.add_argument('--unranked', help='Do not prioritize channels based on their order in the channel list',
+                    dest='ranked', action='store_false')
 parser.add_argument('--min-quality', help='Watch stream in minimum quality', dest='min_quality', action='store_true')
 parser.add_argument('--mute-audio', help='Mute audio for the webdriven Chrome instance', dest='mute_audio',
                     action='store_true')
 parser.add_argument('--debug-log', help='Output tons of debugging information', dest='debug_log', action='store_true')
-parser.set_defaults(min_quality=False, mute_audio=False, debug_log=False)
+parser.set_defaults(ranked=True, min_quality=False, mute_audio=False, debug_log=False)
 args = parser.parse_args()
 
 logging.basicConfig(level=logging.DEBUG if args.debug_log else logging.INFO, format='%(asctime)s %(levelname)-8s: %(message)s')
@@ -153,14 +157,14 @@ while True:
         """
         Open new tab for current channel if there no open tab for this channel AND
         a) fewer than the max two active tabs are open OR
-        b) the current channel has a higher rank than at least one active channel
+        b) ranked mode is enabled and the current channel has a higher rank than at least one active channel
         """
         obsoleteWindowHandles = []
         if collectChannel['windowHandle'] is None and \
-                (len(activeChannels) < 2 or
-                 (len(activeChannels) == 2 and
+                (len(activeChannels) < args.max_concurrent or
+                 (args.ranked and len(activeChannels) == args.max_concurrent and
                   (rank < collectChannels.index(activeChannels[0]) or
-                   rank < collectChannels.index(activeChannels[1])))):
+                   rank < collectChannels.index(activeChannels[-1])))):
             logging.info(f'Opening tab for {collectChannel["channelName"]}')
             # Open tab and navigate to channel
             driver.switch_to.window(driver.window_handles[-1])
@@ -178,10 +182,10 @@ while True:
                 obsoleteWindowHandles = [h for h in driver.window_handles if
                                          h != collectChannel['windowHandle'] and
                                          h not in activeChannelWindowHandles]
-        elif len(activeChannels) > 2:
+        elif len(activeChannels) > args.max_concurrent:
             # More than two active tabs/windows are open, prepare to close the lowest ranked one
             obsoleteWindowHandles.append(activeChannels[-1]['windowHandle'])
-        elif len(activeChannels) >= 2 and collectChannel not in activeChannels:
+        elif len(activeChannels) >= args.max_concurrent and collectChannel not in activeChannels:
             logging.debug(f'Already have two active tabs open, not opening one for {collectChannel["channelName"]}')
             continue
 
@@ -200,9 +204,12 @@ while True:
                 logging.debug(f'Obsolete window belonged to {collectChannels[index]["channelName"]}, '
                               f'unsetting window handle')
                 collectChannels[index]['windowHandle'] = None
+                # Switch to an open tab to avoid running any actions on tabs we just closed
+                driver.switch_to.window(driver.window_handles[-1])
 
-        # Switch to tab for current channel if there are multiple collect channels or tabs
-        if (len(collectChannels) > 1 or len(driver.window_handles) > 1) and collectChannel['windowHandle'] is not None:
+        # Switch to tab for current channel if there is one and it is not open already
+        if collectChannel['windowHandle'] is not None and \
+                collectChannel['windowHandle'] != driver.current_window_handle:
             try:
                 logging.info(f'Switching to tab for {collectChannel["channelName"]}')
                 driver.switch_to.window(collectChannel['windowHandle'])
