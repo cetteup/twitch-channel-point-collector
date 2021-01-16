@@ -263,20 +263,21 @@ while True:
         except (NoSuchElementException, ElementNotInteractableException):
             watchNowLinkPresent = False
 
-        # Click "start watching" button if mature content warning is present
-        try:
-            startWatchingButton = driver.find_element_by_css_selector('button[data-a-target='
-                                                                      '"player-overlay-mature-accept"]')
-            if 'start watching' in str(startWatchingButton.text).lower():
-                logging.info('Clicking "start watching" mature content')
-                startWatchingButton.click()
-        except (NoSuchElementException, ElementNotInteractableException):
-            logging.debug('"Start watching" button not present/interactable')
-
         if channelIsLive:
             # Store time at which we started watching a live broadcast
             if collectChannel['startedWatchingLiveAt'] is None:
+                logging.info(f'Started watching {collectChannel["channelName"]}')
                 collectChannel['startedWatchingLiveAt'] = datetime.now()
+
+            # Click "start watching" button if mature content warning is present
+            try:
+                startWatchingButton = driver.find_element_by_css_selector('button[data-a-target='
+                                                                          '"player-overlay-mature-accept"]')
+                if 'start watching' in str(startWatchingButton.text).lower():
+                    logging.info('Clicking "start watching" mature content')
+                    startWatchingButton.click()
+            except (NoSuchElementException, ElementNotInteractableException):
+                logging.debug('"Start watching" button not present/interactable')
 
             # Check if stream is paused
             # When a streaming channel goes offline, the stream still shows as "live" but the stream is "paused"
