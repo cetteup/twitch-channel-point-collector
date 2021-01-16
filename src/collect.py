@@ -75,9 +75,9 @@ driver.set_window_position(0, 0)
 driver.set_window_size(1366, 768)
 driver.implicitly_wait(3)
 
-# Parse collect channels
+# Set up collect channels
 collectChannels = []
-for channelName in args.channel_name:
+for channelName in list(set(args.channel_name)):
     collectChannels.append({
         'channelName': channelName.strip(),
         'negativeLiveCheckCount': 0,
