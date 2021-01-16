@@ -373,7 +373,6 @@ while True:
             time.sleep(5)
         else:
             logging.debug('Channel is not live')
-            collectChannel['negativeLiveCheckCount'] += 1
 
             if collectChannel['startedWatchingLiveAt'] is not None:
                 # Update earned points
@@ -383,13 +382,16 @@ while True:
                 # Unset start timestamp
                 collectChannel['startedWatchingLiveAt'] = None
 
-            # Check for and VOD playing
-            logging.debug('Checking for VOD player')
-            vodPlayerPresent = len(driver.find_elements_by_css_selector('div[data-a-player-type='
-                                                                        '"channel_home_carousel"]')) > 0
-            # Pause VOD is player is present
-            if vodPlayerPresent:
-                check_play_paused_status('pause', True)
+            # Check for and VOD playing if we are only running with one channel (else, tab will be closed anyways)
+            if len(collectChannels) == 1:
+                # Only use check counter for single-channel mode
+                collectChannel['negativeLiveCheckCount'] += 1
+                logging.debug('Checking for VOD player')
+                vodPlayerPresent = len(driver.find_elements_by_css_selector('div[data-a-player-type='
+                                                                            '"channel_home_carousel"]')) > 0
+                # Pause VOD is player is present
+                if vodPlayerPresent:
+                    check_play_paused_status('pause', True)
 
         # Calculate current broadcast session points
         if collectChannel['startedWatchingLiveAt'] is not None:
