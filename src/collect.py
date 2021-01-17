@@ -397,7 +397,7 @@ while True:
                 logging.debug('"Claim bonus" button not present')
 
             # If we are currently watching the desired number of channels, stay for a while
-            if len(activeChannels) == args.max_concurrent:
+            if len(activeChannels) == args.max_concurrent and len(driver.window_handles) == args.max_concurrent:
                 time.sleep(60 / args.max_concurrent)
         else:
             logging.debug('Channel is not live')
