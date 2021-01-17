@@ -9,6 +9,26 @@ from selenium import webdriver
 from selenium.common.exceptions import NoSuchElementException, ElementNotInteractableException, NoSuchWindowException, TimeoutException
 
 
+def check_if_channel_is_live(channel_name: str) -> bool:
+    # Check whether channel live
+    channel_is_live = False
+    try:
+        logging.debug(f'Fetching live status for {channel_name}')
+        response = requests.get('https://dfscjbhml47d4.cloudfront.net/',
+                                params={'channel_name': channel_name})
+        if response.status_code == 200:
+            parsed = response.json()
+            logging.debug(f'Live check ok, API returned: {parsed}')
+            channel_is_live = parsed['isLive']
+        else:
+            logging.error(f'Live check API returned non-200 status ({response.status_code})')
+    except Exception as e:
+        logging.error(e)
+        logging.error('Checking channel live status via API failed')
+
+    return channel_is_live
+
+
 def check_play_paused_status(desired_status: str, toggle_to_desired: bool = False) -> bool:
     global driver
 
@@ -149,31 +169,39 @@ except (NoSuchElementException, ElementNotInteractableException):
 
 logging.info('Trying to collect points')
 while True:
-    # Loop over collect channels and try to collect points for each one
-    for rank, collectChannel in enumerate(collectChannels):
-        # Check whether channel live
-        channelIsLive = False
-        requestOk = True
-        try:
-            logging.debug(f'Fetching live status for {collectChannel["channelName"]}')
-            response = requests.get('https://dfscjbhml47d4.cloudfront.net/',
-                                    params={'channel_name': collectChannel['channelName']})
-            if response.status_code == 200:
-                parsed = response.json()
-                logging.debug(f'Live check ok, API returned: {parsed}')
-                channelIsLive = parsed['isLive']
-            else:
-                logging.error(f'Live check API returned non-200 status ({response.status_code})')
-                requestOk = False
-        except Exception:
-            logging.error('Checking channel live status via API failed')
-            requestOk = False
+    if len(collectChannels) > 1:
+        # Determine which channels are live
+        liveChannels = [c for c in collectChannels if check_if_channel_is_live(c['channelName'])]
+        # Determine which channels we want to watch
+        if args.ranked:
+            # Ranked mode enabled => always strive to watch to highest channel(s)
+            watchChannels = liveChannels[:args.max_concurrent]
+        else:
+            # Ranked mode disabled => only fill free slots with live channels
+            # Take over any already active channels that are still live
+            watchChannels = [c for c in collectChannels if c in liveChannels and
+                             c['windowHandle'] is not None and c['startedWatchingLiveAt'] is not None]
+            # Fill any free slots
+            candidateChannels = [c for c in liveChannels if c not in watchChannels]
+            watchChannels += candidateChannels[:args.max_concurrent - len(watchChannels)]
+    else:
+        watchChannels = collectChannels
 
-        # Skip channel if API shows it as not live
-        # (continue in case of an API error to let GUI live detection take over)
-        if not channelIsLive and requestOk:
-            continue
+    # Determine idle channels
+    idleChannels = [c for c in collectChannels if c not in watchChannels]
 
+    # Check whether any idle channels are still marked as being watched
+    for collectChannel in idleChannels:
+        if collectChannel['startedWatchingLiveAt'] is not None:
+            # Update earned points
+            collectChannel['earnedPoints'] = calc_earned_channel_points(collectChannel['startedWatchingLiveAt'],
+                                                                        collectChannel['claimedBonuses'],
+                                                                        collectChannel['pointMultiplier'])
+            # Unset start timestamp
+            collectChannel['startedWatchingLiveAt'] = None
+
+    # Loop over live channels and try to collect points for each one
+    for rank, collectChannel in enumerate(watchChannels):
         # Filter collect channel list down to ones that are currently active
         activeChannels = [c for c in collectChannels if c['windowHandle'] is not None
                           and c['startedWatchingLiveAt'] is not None]
@@ -184,11 +212,7 @@ while True:
         b) ranked mode is enabled and the current channel has a higher rank than at least one active channel
         """
         obsoleteWindowHandles = []
-        if collectChannel['windowHandle'] is None and \
-                (len(activeChannels) < args.max_concurrent or
-                 (args.ranked and len(activeChannels) == args.max_concurrent and
-                  (rank < collectChannels.index(activeChannels[0]) or
-                   rank < collectChannels.index(activeChannels[-1])))):
+        if collectChannel['windowHandle'] is None:
             logging.info(f'Opening tab for {collectChannel["channelName"]}')
             # Open tab and navigate to channel
             driver.execute_script(f'window.open("https://www.twitch.tv/{collectChannel["channelName"]}", "_blank");')
@@ -208,9 +232,6 @@ while True:
         elif len(activeChannels) > args.max_concurrent:
             # More than two active tabs/windows are open, prepare to close the lowest ranked one
             obsoleteWindowHandles.append(activeChannels[-1]['windowHandle'])
-        elif len(activeChannels) >= args.max_concurrent and collectChannel not in activeChannels:
-            logging.debug(f'Already have two active tabs open, not opening one for {collectChannel["channelName"]}')
-            continue
 
         # Close any obsolete windows
         for obsoleteWindowHandle in obsoleteWindowHandles:
@@ -240,32 +261,6 @@ while True:
                 logging.error(f'Failed to switch to tab for {collectChannel["channelName"]}')
                 # Unset window handle so a new tab will be opened next iteration
                 collectChannel['windowHandle'] = None
-
-        # If we no longer/currently don't have a tab open for the current channel, skip remaining steps
-        if collectChannel['windowHandle'] is None:
-            # If we were watching the channel in the obsolete/"missing" window/tab,
-            # take note that we are no longer watching
-            if collectChannel['startedWatchingLiveAt'] is not None:
-                # Update earned points
-                collectChannel['earnedPoints'] = calc_earned_channel_points(collectChannel['startedWatchingLiveAt'],
-                                                                            collectChannel['claimedBonuses'],
-                                                                            collectChannel['pointMultiplier'])
-                # Unset start timestamp
-                collectChannel['startedWatchingLiveAt'] = None
-            # Skip remaining steps for this iteration
-            continue
-
-        # Refresh page after 10 negative live checks
-        if collectChannel['negativeLiveCheckCount'] > 10:
-            logging.info('Refreshing page')
-            # Use get instead of refresh to navigate back to collect channel after host/raid
-            try:
-                driver.get(f'https://www.twitch.tv/{collectChannel["channelName"]}')
-            except TimeoutException:
-                logging.error('Failed to refresh page, will retry next iteration')
-                continue
-            # Reset counter
-            collectChannel['negativeLiveCheckCount'] = 0
 
         # Check whether channel is currently live
         liveIndicators = driver.find_elements_by_css_selector(f'a[href="/{collectChannel["channelName"]}"] '
@@ -402,24 +397,38 @@ while True:
         else:
             logging.debug('Channel is not live')
 
-            if collectChannel['startedWatchingLiveAt'] is not None:
-                # Update earned points
-                collectChannel['earnedPoints'] = calc_earned_channel_points(collectChannel['startedWatchingLiveAt'],
-                                                                            collectChannel['claimedBonuses'],
-                                                                            collectChannel['pointMultiplier'])
-                # Unset start timestamp
-                collectChannel['startedWatchingLiveAt'] = None
+            if len(collectChannels) == 1 and collectChannel['negativeLiveCheckCount'] < 10:
+                # With only one collect channel, timestamp cannot be unset using the above idleChannels loop
+                # (the single channel is never considered idle in that sense)
+                if collectChannel['startedWatchingLiveAt'] is not None:
+                    # Update earned points
+                    collectChannel['earnedPoints'] = calc_earned_channel_points(collectChannel['startedWatchingLiveAt'],
+                                                                                collectChannel['claimedBonuses'],
+                                                                                collectChannel['pointMultiplier'])
+                    # Unset start timestamp
+                    collectChannel['startedWatchingLiveAt'] = None
 
-            # Check for and VOD playing if we are only running with one channel (else, tab will be closed anyways)
-            if len(collectChannels) == 1:
                 # Only use check counter for single-channel mode
                 collectChannel['negativeLiveCheckCount'] += 1
-                logging.debug('Checking for VOD player')
-                vodPlayerPresent = len(driver.find_elements_by_css_selector('div[data-a-player-type='
-                                                                            '"channel_home_carousel"]')) > 0
-                # Pause VOD is player is present
-                if vodPlayerPresent:
-                    check_play_paused_status('pause', True)
+            elif len(collectChannels) == 1:
+                # Refresh page after 10 negative live checks
+                logging.info('Refreshing page')
+                # Use get instead of refresh to navigate back to collect channel after host/raid
+                try:
+                    driver.get(f'https://www.twitch.tv/{collectChannel["channelName"]}')
+                except TimeoutException:
+                    logging.error('Failed to refresh page, will retry next iteration')
+                    continue
+                # Reset counter
+                collectChannel['negativeLiveCheckCount'] = 0
+
+            # Check if VOD player is present
+            logging.debug('Checking for VOD player')
+            vodPlayerPresent = len(driver.find_elements_by_css_selector('div[data-a-player-type='
+                                                                        '"channel_home_carousel"]')) > 0
+            # Make sure VOD is paused if player is present
+            if vodPlayerPresent:
+                check_play_paused_status('pause', True)
 
         # Calculate current broadcast session points
         if collectChannel['startedWatchingLiveAt'] is not None:
