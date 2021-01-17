@@ -2,8 +2,45 @@ import argparse
 import logging
 import time
 
+from datetime import datetime
 from selenium import webdriver
 from selenium.common.exceptions import NoSuchElementException, ElementNotInteractableException, NoSuchWindowException, TimeoutException
+
+
+def check_play_paused_status(desired_status: str, toggle_to_desired: bool = False) -> bool:
+    global driver
+
+    status = ''
+    try:
+        logging.debug('Trying to find play/pause button')
+        play_pause_button = driver.find_element_by_css_selector('button[data-a-target="player-play-pause-button"]')
+        status = str(play_pause_button.get_attribute('aria-label')).lower()
+        if status.startswith(desired_status) and toggle_to_desired:
+            logging.info(f'VOD/stream status should be "{desired_status}" but isn\'t, clicking to toggle')
+            play_pause_button.click()
+    except (NoSuchElementException, ElementNotInteractableException):
+        logging.debug('Play/pause button not present')
+
+    # Since the button is supposed to say the opposite! of the desired status, return whether the button does not!
+    # reflect the desired status (button says "pause" means vod/stream is playing)
+    return not status.startswith(desired_status)
+
+
+def calc_earned_channel_points(watching_since: datetime, claimed_bonuses: int, multiplier: float = 1.0) -> int:
+    # Calculate points earned by watchtime
+    # Calculate watchtime in minutes
+    watchtime_in_minutes = int((datetime.now() - watching_since).seconds / 60)
+    # Twitch awards 10 points for watching 5 minutes of a broadcast
+    earned_points = int(watchtime_in_minutes / 5) * POINTS_FOR_WATCHTIME
+
+    # Add points earned by claiming bonuses (50 points each)
+    earned_points += claimed_bonuses * POINTS_FOR_BONUS
+
+    # Apply multiplier
+    earned_points *= multiplier
+
+    return int(earned_points)
+
 
 parser = argparse.ArgumentParser(description='Auto-collect Twitch channel points using the Chrome webdriver')
 parser.add_argument('--version', action='version', version='twitch-channel-point-collector v0.1.5')
@@ -13,14 +50,21 @@ parser.add_argument('--login-pass', help='Password of your own account', type=st
 parser.add_argument('--channel-name', help='Names of channels to collect points on '
                                            '(multiple channels will required the browser to run in the foreground)',
                     nargs='+', type=str, required=True)
+parser.add_argument('--max-concurrent', help='Maximum number of channels to collect points on', type=int,
+                    choices=[1, 2], default=2)
+parser.add_argument('--unranked', help='Do not prioritize channels based on their order in the channel list',
+                    dest='ranked', action='store_false')
 parser.add_argument('--min-quality', help='Watch stream in minimum quality', dest='min_quality', action='store_true')
 parser.add_argument('--mute-audio', help='Mute audio for the webdriven Chrome instance', dest='mute_audio',
                     action='store_true')
 parser.add_argument('--debug-log', help='Output tons of debugging information', dest='debug_log', action='store_true')
-parser.set_defaults(min_quality=False, mute_audio=False, debug_log=False)
+parser.set_defaults(ranked=True, min_quality=False, mute_audio=False, debug_log=False)
 args = parser.parse_args()
 
-logging.basicConfig(level=logging.DEBUG if args.debug_log else logging.INFO, format='%(asctime)s %(message)s')
+logging.basicConfig(level=logging.DEBUG if args.debug_log else logging.INFO, format='%(asctime)s %(levelname)-8s: %(message)s')
+
+POINTS_FOR_WATCHTIME = 10
+POINTS_FOR_BONUS = 50
 
 logging.debug('Initializing webdriver')
 options = webdriver.ChromeOptions()
@@ -31,19 +75,22 @@ driver.set_window_position(0, 0)
 driver.set_window_size(1366, 768)
 driver.implicitly_wait(3)
 
-# Parse collect channels
+# Set up collect channels
 collectChannels = []
-for channelName in args.channel_name:
+for channelName in sorted(set(args.channel_name), key=args.channel_name.index):
     collectChannels.append({
         'channelName': channelName.strip(),
         'negativeLiveCheckCount': 0,
         'windowHandle': None,
-        'subscribed': False
+        'earnedPoints': 0,
+        'pointMultiplier': 0.0,
+        'startedWatchingLiveAt': None,
+        'claimedBonuses': 0
     })
 
 if len(collectChannels) > 1:
-    logging.info('PLEASE NOTE: Running with multiple collect channels, '
-                 'browser will be brought to the foreground when switching tabs')
+    logging.warning('Running with multiple collect channels, '
+                    'browser will be brought to the foreground when switching tabs')
 
 logging.info('Opening (first) collect channel on Twitch')
 driver.get(f'https://www.twitch.tv/{collectChannels[0]["channelName"]}')
@@ -101,9 +148,22 @@ except (NoSuchElementException, ElementNotInteractableException):
 logging.info('Trying to collect points')
 while True:
     # Loop over collect channels and try to collect points for each one
-    for collectChannel in collectChannels:
-        # Open tab if required
-        if collectChannel['windowHandle'] is None:
+    for rank, collectChannel in enumerate(collectChannels):
+        # Filter collect channel list down to ones that are currently active
+        activeChannels = [c for c in collectChannels if c['windowHandle'] is not None
+                          and c['startedWatchingLiveAt'] is not None]
+
+        """
+        Open new tab for current channel if there no open tab for this channel AND
+        a) fewer than the max two active tabs are open OR
+        b) ranked mode is enabled and the current channel has a higher rank than at least one active channel
+        """
+        obsoleteWindowHandles = []
+        if collectChannel['windowHandle'] is None and \
+                (len(activeChannels) < args.max_concurrent or
+                 (args.ranked and len(activeChannels) == args.max_concurrent and
+                  (rank < collectChannels.index(activeChannels[0]) or
+                   rank < collectChannels.index(activeChannels[-1])))):
             logging.info(f'Opening tab for {collectChannel["channelName"]}')
             # Open tab and navigate to channel
             driver.execute_script(f'window.open("https://www.twitch.tv/{collectChannel["channelName"]}", "_blank");')
@@ -112,8 +172,42 @@ while True:
                           handle not in [c['windowHandle'] for c in collectChannels]]
             collectChannel['windowHandle'] = newHandles[-1]
 
-        # Switch to tab for current channel if there are multiple collect channels or tabs
-        if len(collectChannels) > 1 or len(driver.window_handles) > 1:
+            # Close any obsolete old tabs
+            if len(driver.window_handles) > len(activeChannels):
+                activeChannelWindowHandles = [c['windowHandle'] for c in activeChannels]
+                # Iterate over all existing window handles, prepare to close those windows/tabs that are not
+                # a) active or b) the one we just opened
+                obsoleteWindowHandles = [h for h in driver.window_handles if
+                                         h != collectChannel['windowHandle'] and
+                                         h not in activeChannelWindowHandles]
+        elif len(activeChannels) > args.max_concurrent:
+            # More than two active tabs/windows are open, prepare to close the lowest ranked one
+            obsoleteWindowHandles.append(activeChannels[-1]['windowHandle'])
+        elif len(activeChannels) >= args.max_concurrent and collectChannel not in activeChannels:
+            logging.debug(f'Already have two active tabs open, not opening one for {collectChannel["channelName"]}')
+            continue
+
+        # Close any obsolete windows
+        for obsoleteWindowHandle in obsoleteWindowHandles:
+            try:
+                logging.debug('Trying to close obsolete window')
+                driver.switch_to.window(obsoleteWindowHandle)
+                driver.close()
+            except NoSuchWindowException:
+                logging.warning('Window/tab to close is already gone')
+            finally:
+                # No matter how, window is now gone => unset window handle
+                channelWindowHandles = [c['windowHandle'] for c in collectChannels]
+                index = channelWindowHandles.index(obsoleteWindowHandle)
+                logging.debug(f'Obsolete window belonged to {collectChannels[index]["channelName"]}, '
+                              f'unsetting window handle')
+                collectChannels[index]['windowHandle'] = None
+                # Switch to an open tab to avoid running any actions on tabs we just closed
+                driver.switch_to.window(driver.window_handles[-1])
+
+        # Switch to tab for current channel if there is one and it is not open already
+        if collectChannel['windowHandle'] is not None and \
+                collectChannel['windowHandle'] != driver.current_window_handle:
             try:
                 logging.info(f'Switching to tab for {collectChannel["channelName"]}')
                 driver.switch_to.window(collectChannel['windowHandle'])
@@ -121,7 +215,20 @@ while True:
                 logging.error(f'Failed to switch to tab for {collectChannel["channelName"]}')
                 # Unset window handle so a new tab will be opened next iteration
                 collectChannel['windowHandle'] = None
-                continue
+
+        # If we no longer/currently don't have a tab open for the current channel, skip remaining steps
+        if collectChannel['windowHandle'] is None:
+            # If we were watching the channel in the obsolete/"missing" window/tab,
+            # take note that we are no longer watching
+            if collectChannel['startedWatchingLiveAt'] is not None:
+                # Update earned points
+                collectChannel['earnedPoints'] = calc_earned_channel_points(collectChannel['startedWatchingLiveAt'],
+                                                                            collectChannel['claimedBonuses'],
+                                                                            collectChannel['pointMultiplier'])
+                # Unset start timestamp
+                collectChannel['startedWatchingLiveAt'] = None
+            # Skip remaining steps for this iteration
+            continue
 
         # Refresh page after 10 negative live checks
         if collectChannel['negativeLiveCheckCount'] > 10:
@@ -140,10 +247,6 @@ while True:
                                                               f'div.tw-channel-status-text-indicator')
         channelIsLive = len(liveIndicators) > 0
 
-        # Check whether user subscribed to channel
-        collectChannel['subscribed'] = len(driver.find_elements_by_css_selector('button[data-a-target='
-                                                                                '"subscribed-button"]')) > 0
-
         # Check whether channel recently went live and "watch now" link is present
         watchNowLinkPresent = False
         try:
@@ -154,17 +257,34 @@ while True:
         except (NoSuchElementException, ElementNotInteractableException):
             watchNowLinkPresent = False
 
-        # Click "start watching" button if mature content warning is present
-        try:
-            startWatchingButton = driver.find_element_by_css_selector('button[data-a-target='
-                                                                      '"player-overlay-mature-accept"]')
-            if 'start watching' in str(startWatchingButton.text).lower():
-                logging.info('Clicking "start watching" mature content')
-                startWatchingButton.click()
-        except (NoSuchElementException, ElementNotInteractableException):
-            logging.debug('"Start watching" button not present/interactable')
-
         if channelIsLive:
+            # Store time at which we started watching a live broadcast
+            if collectChannel['startedWatchingLiveAt'] is None:
+                logging.info(f'Started watching {collectChannel["channelName"]}')
+                collectChannel['startedWatchingLiveAt'] = datetime.now()
+
+            # Click "start watching" button if mature content warning is present
+            try:
+                startWatchingButton = driver.find_element_by_css_selector('button[data-a-target='
+                                                                          '"player-overlay-mature-accept"]')
+                if 'start watching' in str(startWatchingButton.text).lower():
+                    logging.info('Clicking "start watching" mature content')
+                    startWatchingButton.click()
+            except (NoSuchElementException, ElementNotInteractableException):
+                logging.debug('"Start watching" button not present/interactable')
+
+            # Check if stream is paused
+            # When a streaming channel goes offline, the stream still shows as "live" but the stream is "paused"
+            if not check_play_paused_status('play'):
+                logging.info('Channel should be live but stream seems paused, refreshing page')
+                # Use get instead of refresh to navigate back to collect channel after host/raid
+                try:
+                    driver.get(f'https://www.twitch.tv/{collectChannel["channelName"]}')
+                except TimeoutException:
+                    logging.error('Failed to refresh page, will retry next iteration')
+                finally:
+                    continue
+
             # Turn down quality to the lower available option if requested
             if args.min_quality:
                 logging.debug('Checking stream quality')
@@ -201,34 +321,92 @@ while True:
             except (NoSuchElementException, ElementNotInteractableException):
                 logging.error('Chat expand button not present/interactable')
 
+            # Make sure channel uses channel points
+            try:
+                logging.debug('Trying to find channel point button/indicator')
+                driver.find_element_by_css_selector('div[data-test-selector="community-points-summary"] button')
+            except NoSuchElementException:
+                logging.warning(f'{collectChannel["channelName"]} is not using channel points, skipping')
+                continue
+
+            # Get channel point multiplier if not set yet
+            if collectChannel['pointMultiplier'] == 0.0:
+                try:
+                    logging.debug('Opening channel point dialog')
+                    driver.find_element_by_css_selector('div[data-test-selector="community-points-summary"] button').click()
+
+                    # Click initial "Get Started" button if present
+                    getStartedButtons = driver.find_elements_by_css_selector('div.reward-center-body '
+                                                                             'button.tw-core-button--primary')
+                    if len(getStartedButtons) > 0:
+                        getStartedButtons[0].click()
+
+                    # Check whether multiplier heading is present
+                    multiplierHeadings = driver.find_elements_by_css_selector('div#channel-points-reward-center-header h6')
+                    # Get multiplier value if heading is present, else use default (1.0)
+                    if len(multiplierHeadings) > 0:
+                        # Try to split heading and cast to float
+                        collectChannel['pointMultiplier'] = float(str(multiplierHeadings[0].text).lower().split('x')[0])
+                    else:
+                        collectChannel['pointMultiplier'] = 1.0
+
+                    logging.debug('Closing channel point dialog')
+                    driver.find_element_by_css_selector('div[data-test-selector="community-points-summary"] button').click()
+                except (NoSuchElementException, ElementNotInteractableException):
+                    logging.error('Failed to get channel point multiplier')
+                    # Use default multiplier
+                    collectChannel['pointMultiplier'] = 1.0
+                except ValueError:
+                    logging.error('Failed to parse channel point multiplier')
+                    # Use default multiplier
+                    collectChannel['pointMultiplier'] = 1.0
+
             try:
                 logging.debug('Trying to find "claim bonus" button')
                 claimBonusButton = driver.find_element_by_css_selector('button.tw-button.tw-button--success')
                 claimBonusButton.click()
                 logging.info('Found button, claimed bonus')
+                # Update bonus counter
+                collectChannel['claimedBonuses'] += 1
             except (NoSuchElementException, ElementNotInteractableException):
                 logging.debug('"Claim bonus" button not present')
-                
+
             # Stay for a few seconds
             time.sleep(5)
         else:
             logging.debug('Channel is not live')
-            collectChannel['negativeLiveCheckCount'] += 1
-            # Check for and VOD playing
-            logging.debug('Checking for VOD player')
-            vodPlayerPresent = len(driver.find_elements_by_css_selector('div[data-a-player-type='
-                                                                        '"channel_home_carousel"]')) > 0
-            # Pause VOD is player is present
-            if vodPlayerPresent:
-                try:
-                    logging.debug('Trying to find play/pause button')
-                    playPauseButton = driver.find_element_by_css_selector('button[data-a-target='
-                                                                          '"player-play-pause-button"]')
-                    if 'pause' in str(playPauseButton.get_attribute('aria-label')).lower():
-                        logging.info('Pausing VOD playback')
-                        playPauseButton.click()
-                except (NoSuchElementException, ElementNotInteractableException):
-                    logging.debug('Play/pause button not present')
+
+            if collectChannel['startedWatchingLiveAt'] is not None:
+                # Update earned points
+                collectChannel['earnedPoints'] = calc_earned_channel_points(collectChannel['startedWatchingLiveAt'],
+                                                                            collectChannel['claimedBonuses'],
+                                                                            collectChannel['pointMultiplier'])
+                # Unset start timestamp
+                collectChannel['startedWatchingLiveAt'] = None
+
+            # Check for and VOD playing if we are only running with one channel (else, tab will be closed anyways)
+            if len(collectChannels) == 1:
+                # Only use check counter for single-channel mode
+                collectChannel['negativeLiveCheckCount'] += 1
+                logging.debug('Checking for VOD player')
+                vodPlayerPresent = len(driver.find_elements_by_css_selector('div[data-a-player-type='
+                                                                            '"channel_home_carousel"]')) > 0
+                # Pause VOD is player is present
+                if vodPlayerPresent:
+                    check_play_paused_status('pause', True)
+
+        # Calculate current broadcast session points
+        if collectChannel['startedWatchingLiveAt'] is not None:
+            currentBroadcastPoints = calc_earned_channel_points(collectChannel['startedWatchingLiveAt'],
+                                                                collectChannel['claimedBonuses'],
+                                                                collectChannel['pointMultiplier'])
+        else:
+            currentBroadcastPoints = 0
+
+        # If we earned any points, log point estimate
+        if (collectChannel['earnedPoints'] + currentBroadcastPoints) > 0:
+            logging.info(f'Channel points earned for {collectChannel["channelName"]}: '
+                         f'{collectChannel["earnedPoints"] + currentBroadcastPoints} (estimate)')
 
     # If collecting on a single channel, wait 30 seconds before checking again
     if len(collectChannels) == 1:
