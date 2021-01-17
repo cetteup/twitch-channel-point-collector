@@ -2,6 +2,8 @@ import argparse
 import logging
 import time
 
+import requests
+
 from datetime import datetime
 from selenium import webdriver
 from selenium.common.exceptions import NoSuchElementException, ElementNotInteractableException, NoSuchWindowException, TimeoutException
@@ -149,6 +151,29 @@ logging.info('Trying to collect points')
 while True:
     # Loop over collect channels and try to collect points for each one
     for rank, collectChannel in enumerate(collectChannels):
+        # Check whether channel live
+        channelIsLive = False
+        requestOk = True
+        try:
+            logging.debug(f'Fetching live status for {collectChannel["channelName"]}')
+            response = requests.get('https://dfscjbhml47d4.cloudfront.net/',
+                                    params={'channel_name': collectChannel['channelName']})
+            if response.status_code == 200:
+                parsed = response.json()
+                logging.debug(f'Live check ok, API returned: {parsed}')
+                channelIsLive = parsed['isLive']
+            else:
+                logging.error(f'Live check API returned non-200 status ({response.status_code})')
+                requestOk = False
+        except Exception:
+            logging.error('Checking channel live status via API failed')
+            requestOk = False
+
+        # Skip channel if API shows it as not live
+        # (continue in case of an API error to let GUI live detection take over)
+        if not channelIsLive and requestOk:
+            continue
+
         # Filter collect channel list down to ones that are currently active
         activeChannels = [c for c in collectChannels if c['windowHandle'] is not None
                           and c['startedWatchingLiveAt'] is not None]
@@ -371,8 +396,9 @@ while True:
             except (NoSuchElementException, ElementNotInteractableException):
                 logging.debug('"Claim bonus" button not present')
 
-            # Stay for a few seconds
-            time.sleep(5)
+            # If we are currently watching the desired number of channels, stay for a while
+            if len(activeChannels) == args.max_concurrent:
+                time.sleep(60 / args.max_concurrent)
         else:
             logging.debug('Channel is not live')
 
