@@ -48,12 +48,13 @@ def check_play_paused_status(desired_status: str, toggle_to_desired: bool = Fals
     return not status.startswith(desired_status)
 
 
-def calc_earned_channel_points(watching_since: datetime, claimed_bonuses: int, multiplier: float = 1.0) -> int:
+def calc_earned_channel_points(watching_since: datetime, claimed_bonuses: int = 0,
+                               multiplier: float = 1.0, buffer: int = 0) -> int:
     # Calculate points earned by watchtime
     # Calculate watchtime in minutes
     watchtime_in_minutes = int((datetime.now() - watching_since).seconds / 60)
     # Twitch awards 10 points for watching 5 minutes of a broadcast
-    earned_points = int(watchtime_in_minutes / 5) * POINTS_FOR_WATCHTIME
+    earned_points = int((watchtime_in_minutes - buffer) / 5) * POINTS_FOR_WATCHTIME
 
     # Add points earned by claiming bonuses (50 points each)
     earned_points += claimed_bonuses * POINTS_FOR_BONUS
@@ -74,13 +75,16 @@ parser.add_argument('--channel-name', help='Names of channels to collect points 
                     nargs='+', type=str, required=True)
 parser.add_argument('--max-concurrent', help='Maximum number of channels to collect points on', type=int,
                     choices=[1, 2], default=2)
+parser.add_argument('--asap', help='Immediately switch to higher ranked channel if once is available, do not wait for '
+                                   'lower ranked channel to get first points (do not wait for watch streak points)',
+                    dest='asap', action='store_true')
 parser.add_argument('--unranked', help='Do not prioritize channels based on their order in the channel list',
                     dest='ranked', action='store_false')
 parser.add_argument('--min-quality', help='Watch stream in minimum quality', dest='min_quality', action='store_true')
 parser.add_argument('--mute-audio', help='Mute audio for the webdriven Chrome instance', dest='mute_audio',
                     action='store_true')
 parser.add_argument('--debug-log', help='Output tons of debugging information', dest='debug_log', action='store_true')
-parser.set_defaults(ranked=True, min_quality=False, mute_audio=False, debug_log=False)
+parser.set_defaults(ranked=True, asap=False, min_quality=False, mute_audio=False, debug_log=False)
 args = parser.parse_args()
 
 logging.basicConfig(level=logging.DEBUG if args.debug_log else logging.INFO, format='%(asctime)s %(levelname)-8s: %(message)s')
@@ -173,9 +177,22 @@ while True:
         # Determine which channels are live
         liveChannels = [c for c in collectChannels if check_if_channel_is_live(c['channelName'])]
         # Determine which channels we want to watch
-        if args.ranked:
-            # Ranked mode enabled => always strive to watch to highest channel(s)
+        if args.ranked and args.asap:
+            # Ranked mode enabled with asap => always strive to watch to highest channel(s) asap
             watchChannels = liveChannels[:args.max_concurrent]
+        elif args.ranked:
+            # Ranked mode enabled without asap => keep watching lower ranked channels until
+            # first points have been awarded (watch streak points are awarded with first time-based points)
+            watchChannels = [c for c in collectChannels if c in liveChannels and c['windowHandle'] is not None and
+                             c['startedWatchingLiveAt'] is not None and
+                             calc_earned_channel_points(c['startedWatchingLiveAt'], buffer=1) < POINTS_FOR_WATCHTIME]
+            """
+            Determine which live channels are candidates to watch now because
+            a) there are open "slots"/fewer watch channel that the max
+            b) the channels has a higher rank than at least one watch channel
+            """
+            candidateChannels = [c for c in liveChannels if c not in watchChannels]
+            watchChannels += candidateChannels[:args.max_concurrent - len(watchChannels)]
         else:
             # Ranked mode disabled => only fill free slots with live channels
             # Take over any already active channels that are still live
