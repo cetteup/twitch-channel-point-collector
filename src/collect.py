@@ -319,8 +319,8 @@ while True:
                     driver.get(f'https://www.twitch.tv/{collectChannel["channelName"]}')
                 except TimeoutException:
                     logging.error('Failed to refresh page, will retry next iteration')
-                finally:
-                    continue
+                # Skip channel for this iteration
+                continue
 
             # Turn down quality to the lower available option if requested
             if args.min_quality:
