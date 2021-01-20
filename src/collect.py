@@ -174,33 +174,34 @@ except (NoSuchElementException, ElementNotInteractableException):
 logging.info('Trying to collect points')
 while True:
     if len(collectChannels) > 1:
-        # Determine which channels are live
-        liveChannels = [c for c in collectChannels if check_if_channel_is_live(c['channelName'])]
         # Determine which channels we want to watch
         if args.ranked and args.asap:
             # Ranked mode enabled with asap => always strive to watch to highest channel(s) asap
-            watchChannels = liveChannels[:args.max_concurrent]
-        elif args.ranked:
-            # Ranked mode enabled without asap => keep watching lower ranked channels until
-            # first points have been awarded (watch streak points are awarded with first time-based points)
-            watchChannels = [c for c in collectChannels if c in liveChannels and c['windowHandle'] is not None and
-                             c['startedWatchingLiveAt'] is not None and
-                             calc_earned_channel_points(c['startedWatchingLiveAt'], buffer=1) < POINTS_FOR_WATCHTIME]
-            """
-            Determine which live channels are candidates to watch now because
-            a) there are open "slots"/fewer watch channel that the max
-            b) the channels has a higher rank than at least one watch channel
-            """
-            candidateChannels = [c for c in liveChannels if c not in watchChannels]
-            watchChannels += candidateChannels[:args.max_concurrent - len(watchChannels)]
+            # Reset watch channels
+            watchChannels = []
+            # Fill available slots with the highest ranked live channels
+            for c in collectChannels:
+                # Add channel if a free slot is left and it is live
+                if len(watchChannels) < args.max_concurrent and check_if_channel_is_live(c['channelName']):
+                    watchChannels.append(c)
         else:
-            # Ranked mode disabled => only fill free slots with live channels
-            # Take over any already active channels that are still live
-            watchChannels = [c for c in collectChannels if c in liveChannels and
-                             c['windowHandle'] is not None and c['startedWatchingLiveAt'] is not None]
+            if args.ranked:
+                # Ranked mode enabled without asap => keep watching lower ranked channels until
+                # first points have been awarded (watch streak points are awarded with first time-based points)
+                watchChannels = [c for c in collectChannels if c['startedWatchingLiveAt'] is not None and
+                                 check_if_channel_is_live(c['channelName']) and
+                                 calc_earned_channel_points(c['startedWatchingLiveAt'], buffer=1) < POINTS_FOR_WATCHTIME]
+            else:
+                # Ranked mode disabled => only fill free slots with live channels
+                # Keep any already active channels that are still live
+                watchChannels = [c for c in collectChannels if c['startedWatchingLiveAt'] is not None and
+                                 check_if_channel_is_live(c['channelName'])]
             # Fill any free slots
-            candidateChannels = [c for c in liveChannels if c not in watchChannels]
-            watchChannels += candidateChannels[:args.max_concurrent - len(watchChannels)]
+            for c in collectChannels:
+                # Add channel to free slot if is not already being watched and is live
+                if len(watchChannels) < args.max_concurrent and c not in watchChannels and \
+                        check_if_channel_is_live(c['channelName']):
+                    watchChannels.append(c)
     else:
         watchChannels = collectChannels
 
