@@ -9,6 +9,16 @@ from selenium import webdriver
 from selenium.common.exceptions import NoSuchElementException, ElementNotInteractableException, NoSuchWindowException, TimeoutException
 
 
+def refresh_page(channel_name: str):
+    global driver
+
+    # Use get instead of refresh to navigate back to collect channel after host/raid
+    try:
+        driver.get(f'https://www.twitch.tv/{channel_name}')
+    except TimeoutException:
+        logging.error('Failed to refresh page, will retry next iteration')
+
+
 def check_if_channel_is_live(channel_name: str) -> bool:
     # Check whether channel live
     channel_is_live = False
@@ -315,12 +325,7 @@ while True:
             # When a streaming channel goes offline, the stream still shows as "live" but the stream is "paused"
             if not check_play_paused_status('play'):
                 logging.info('Channel should be live but stream seems paused, refreshing page')
-                # Use get instead of refresh to navigate back to collect channel after host/raid
-                try:
-                    driver.get(f'https://www.twitch.tv/{collectChannel["channelName"]}')
-                except TimeoutException:
-                    logging.error('Failed to refresh page, will retry next iteration')
-                # Skip channel for this iteration
+                refresh_page(collectChannel["channelName"])
                 continue
 
             # Turn down quality to the lower available option if requested
