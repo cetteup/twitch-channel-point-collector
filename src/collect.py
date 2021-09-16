@@ -6,7 +6,8 @@ import requests
 
 from datetime import datetime
 from selenium import webdriver
-from selenium.common.exceptions import NoSuchElementException, ElementNotInteractableException, NoSuchWindowException, TimeoutException
+from selenium.common.exceptions import NoSuchElementException, ElementNotInteractableException, NoSuchWindowException, \
+    TimeoutException, ElementClickInterceptedException
 
 
 def refresh_page(channel_name: str):
@@ -354,7 +355,7 @@ while True:
                         logging.debug('Lowest quality is already selected, closing stream settings')
                         # Click again to close settings
                         driver.find_element_by_css_selector('button[aria-label="Settings"]').click()
-                except (NoSuchElementException, ElementNotInteractableException):
+                except (NoSuchElementException, ElementNotInteractableException, ElementClickInterceptedException):
                     logging.debug('Stream quality settings not present')
 
             # Make sure chat is expanded
