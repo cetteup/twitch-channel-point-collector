@@ -297,10 +297,11 @@ while True:
 
         # Close any promo messages
         try:
-            closePromoButton = driver.find_element_by_css_selector('button[aria-label="Dismiss promo message"], '
-                                                                   'button[aria-label="Close"]')
-            closePromoButton.click()
-        except ElementNotInteractableException:
+            closePromoButtonA = driver.find_element_by_css_selector('button[aria-label="Dismiss promo message"]')
+            closePromoButtonA.click()
+            closePromoButtonB = driver.find_element_by_css_selector('button[aria-label="Close"]')
+            closePromoButtonB.click()
+        except (ElementNotInteractableException, ElementClickInterceptedException):
             logging.error('Promo message is present but not interactable')
         except NoSuchElementException:
             pass
