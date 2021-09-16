@@ -248,6 +248,8 @@ while True:
             newHandles = [handle for handle in driver.window_handles if
                           handle not in [c['windowHandle'] for c in collectChannels]]
             collectChannel['windowHandle'] = newHandles[-1]
+            # Give tab time to open/render
+            time.sleep(5)
 
             # Close any obsolete old tabs
             if len(driver.window_handles) > len(activeChannels):
@@ -285,6 +287,8 @@ while True:
             try:
                 logging.info(f'Switching to tab for {collectChannel["channelName"]}')
                 driver.switch_to.window(collectChannel['windowHandle'])
+                # Give tab time to open/render
+                time.sleep(3)
             except NoSuchWindowException:
                 logging.error(f'Failed to switch to tab for {collectChannel["channelName"]}')
                 # Unset window handle so a new tab will be opened next iteration
