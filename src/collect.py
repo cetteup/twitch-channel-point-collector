@@ -406,7 +406,7 @@ while True:
 
             try:
                 logging.debug('Trying to find "claim bonus" button')
-                claimBonusButton = driver.find_element_by_css_selector('button.tw-button.tw-button--success')
+                claimBonusButton = driver.find_element_by_css_selector('button[aria-label="Claim Bonus"]')
                 claimBonusButton.click()
                 logging.info('Found button, claimed bonus')
                 # Update bonus counter
