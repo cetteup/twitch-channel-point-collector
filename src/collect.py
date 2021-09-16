@@ -295,6 +295,16 @@ while True:
                 # Unset window handle so a new tab will be opened next iteration
                 collectChannel['windowHandle'] = None
 
+        # Close any promo messages
+        try:
+            closePromoButton = driver.find_element_by_css_selector('button[aria-label="Dismiss promo message"], '
+                                                                   'button[aria-label="Close"]')
+            closePromoButton.click()
+        except ElementNotInteractableException:
+            logging.error('Promo message is present but not interactable')
+        except NoSuchElementException:
+            pass
+
         # Check whether channel is currently live
         liveIndicators = driver.find_elements_by_css_selector(f'a[href="/{collectChannel["channelName"]}"] '
                                                               f'div.tw-channel-status-text-indicator')
